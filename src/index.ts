@@ -10,6 +10,9 @@ export type EmptyObject = Record<never, never>;
  */
 export type ColorSpace = -4 | -3 | -2 | -1 | 0 | 1 | 2 | 3;
 
+const ESC = '\x1B';
+const RESET = ESC + '[0m';
+
 // polly - just  in case
 const GLOBAL_THIS = typeof globalThis !== 'undefined' ? globalThis : {} as typeof globalThis;
 
@@ -159,7 +162,7 @@ type AnsiCodeTuple = [on: number, off: number, isCustom?: number];
 type StyleState = Partial<Record<StyleKeys, AnsiCodeTuple>>;
 type StainBaseColors = 'black' | 'blue' | 'cyan' | 'green' | 'purple' | 'red' | 'white' | 'yellow';
 export type StainColors = StainBaseColors | `i${StainBaseColors}`;
-// Generate XtermKeys from x0 to x255
+// generate XtermKeys from x0 to x255
 type GenerateXtermKeys<N extends number, Acc extends string[] = []> =
   Acc['length'] extends N
     ? Acc[number]
@@ -177,6 +180,7 @@ type CustomAnsiStainer<
     normal: CustomAnsiStainer<C, X>;
     reset: CustomAnsiStainer<C, X>;
     underline: CustomAnsiStainer<C, X>;
+    inverse: CustomAnsiStainer<C, X>;
   } &
   // built-in named colors
   { [K in StainColors]: CustomAnsiStainer<C, X> } &
@@ -184,6 +188,7 @@ type CustomAnsiStainer<
   (X extends true ? { [K in XtermKeys]: CustomAnsiStainer<C, X> } : EmptyObject) &
   // custom colors from opts.colors
   (keyof C extends never ? EmptyObject : { [K in keyof C]: CustomAnsiStainer<C, X> });
+
 
 type StainOpts<C extends Record<string, number> = EmptyObject> = {
   format?: (...args: any[])=> string;
@@ -208,7 +213,9 @@ function createStain<C extends Record<string, number> = EmptyObject>(
   const {
     colors,
     xterm,
-    format = (...args) => args.length > 1 ? args.join(' ') : args[0],
+    format = (...args) => args.length > 1
+      ? args.join(' ')
+      : typeof args[0] !== 'string' ? JSON.stringify(args[0]) : args[0],
     noColor = COLOR_SPACE === 0,
   } = opts;
   const kulers: Record<string, number> = {};
@@ -248,20 +255,76 @@ function createStain<C extends Record<string, number> = EmptyObject>(
 
   type StrNum = string | number;
   const escStain = (str: string, open: StrNum, close: StrNum, replace?: StrNum) => {
-    open = `\x1b[${open}m`;
-    close = `\x1b[${close}m`;
-    let idx = str.indexOf(close, open.length);
-    if (!~idx) { return open + str + close; }
-    let rclose = '';
+    // str = String(str);
+    // convert numeric codes to actual ANSI escape sequences
+    const openStr = ESC + `[${open}m`;
+    const closeStr = ESC + `[${close}m`;
+    const closeLen = closeStr.length;
+    const parts: string[] = [];
     let cursor = 0;
-    replace = replace ? `\x1b[22m\x1b[${replace}m` : open;
-    do {
-      rclose += str.substring(cursor, idx) + replace;
-      cursor = idx + close.length;
-      idx = str.indexOf(close, cursor);
-    } while (~idx);
-    return open + rclose + str.substring(cursor) + close;
+    let seqCount = 0; // count of close sequences for alternating styles
+    let resetCount = 0;
+    while (true) {
+      const idxClose = str.indexOf(closeStr, cursor);
+      // next global reset unless it is the reset style
+      const idxReset = open === 0 ? -1 : str.indexOf(RESET, cursor);
+      let idx = -1;
+      let isReset = false;
+      // which comes first, cur close sequence or a global reset
+      if (idxClose >= 0) {
+        if (idxReset >= 0 && idxReset < idxClose) {
+          idx = idxReset;
+          isReset = true;
+        } else {
+          idx = idxClose;
+        }
+      } else if (idxReset >= 0) {
+        idx = idxReset;
+        isReset = true;
+      } else {
+        break;
+      }
+      parts.push(str.substring(cursor, idx));
+
+      if (isReset) {
+        parts.push(RESET);
+        resetCount++;
+        // after every second reset restore style - handles: stain.red(`text ${stain.reset('reset')} text`)
+        if (resetCount % 2 === 0) { parts.push(openStr); }
+        cursor = idx + RESET.length;
+        continue;
+      }
+
+      // it's a closing sequence. Now, determine the correct replacement
+      const segment = str.substring(cursor, idx);
+      const openInSeg = segment.split(openStr).length;
+      const closeInSeg = segment.split(closeStr).length;
+
+      let rep: string;
+      // this complex logic is for font styles, where `stain.normal`'s opening code (`22`)
+      // is the same as `stain.bold`'s closing code (`22`), creating ambiguity
+      if (replace !== undefined && openInSeg <= closeInSeg) {
+        // case 1: Alternating nesting pattern (e.g. `normal` in `bold`)
+        // the segment before the match does not contain an unclosed opening tag of our type
+        // we use `seqCount` to treat the first `closeStr` as an "opener" and the second as a "closer"
+        seqCount++;
+        const on = ESC + `[${replace}m`; // the outer style's open code (e.g. `\x1B[1m` for bold)
+        const off = ESC + `[${close}m`;   // the inner style's open/close code (e.g. `\x1B[22m` for normal)
+        rep = (seqCount % 2 === 1) ? on + off : off + on;
+      } else {
+        // case 2: Self-nesting (e.g. `bold` in `bold`) or simple styles (e.g. `red` in `red`)
+        // the segment has an unclosed `openStr`, so this `closeStr` belongs to that inner style
+        // we just need to re-apply our own outer style to continue it
+        rep = openStr;
+      }
+      parts.push(rep);
+      cursor = idx + closeLen;
+    }
+    parts.push(str.substring(cursor));
+    return openStr + parts.join('') + closeStr;
   };
+
+
 
   // our main stain
   const colorProxy = (cur: StyleState = {}) =>
@@ -269,16 +332,16 @@ function createStain<C extends Record<string, number> = EmptyObject>(
       get: (_target, prop: string) => {
         const nxt = {...cur};
         const fg = nxt.fg;
-        if (kulers[prop]) {
-          // need to keep previous for bg logic
-          nxt.pr = [fg?.[0] ?? kulers[prop], 39, fg?.[2] ?? (eBitColor[prop] ? 1 : 0)];
-          nxt.fg = [kulers[prop], 39, eBitColor[prop] ? 1 : 0];
+        if (kulers[prop] !== undefined) {
+        // need to keep previous for bg logic
+          nxt.pr = [fg?.[0] ?? kulers[prop], 39, fg?.[2] ?? (eBitColor[prop] !== undefined ? 1 : 0)];
+          nxt.fg = [kulers[prop], 39, eBitColor[prop] !== undefined ? 1 : 0];
         } else if (prop === 'bg' && fg) {
           nxt.bg = [fg[0] + (fg[2] || fg[1] === 49 ? 0 : 10), 49, fg[2]] as AnsiCodeTuple;
           // @ts-expect-error to make this type easier we ignore undefined
           if (nxt.pr?.[1] === 39) { nxt.fg = fg[0] === nxt.pr[0] ? undefined : [...nxt.pr]; }
         } else {
-          // font styles
+        // font styles
           const fo = prop === 'bold' ? 1 : prop === 'dim' ? 2 : prop === 'normal' ? 22 : null;
           if (fo) {
             nxt.ft = [fo, 22, 0];
@@ -294,10 +357,9 @@ function createStain<C extends Record<string, number> = EmptyObject>(
       },
       apply: (_target, _thisArg, args: string[]) => {
         let res = format(...args);
-        if (typeof res !== 'string') { res = JSON.stringify(res); }
-        // reset
+        // console.log({res})
+        // a loop here will dec perf by 6x
         if (cur.re) { return escStain(res, 0, 0); }
-        // a loop would be nice here if it didn't inc perf by 6x
         if (cur.fg) { res = escStain(res, (cur.fg[2] ? '38;5;' : '') + cur.fg[0], cur.fg[1]); }
         if (cur.bg) { res = escStain(res, (cur.bg[2] ? '48;5;' : '') + cur.bg[0], cur.bg[1]); }
         if (cur.ft) { res = escStain(res, cur.ft[0], cur.ft[1], cur.ft[0]); }
@@ -309,5 +371,10 @@ function createStain<C extends Record<string, number> = EmptyObject>(
   return colorProxy() as CustomAnsiStainer<C, boolean>;
 }
 
-const stain = createStain();
+const stain = createStain({ xterm: true });
+
 export default stain;
+export {
+  createStain,
+};
+
