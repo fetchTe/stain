@@ -1,5 +1,7 @@
 
-export type EmptyObject = Record<never, never>;
+type EmptyObject = Record<never, never>;
+type StrNum = string | number;
+
 
 /**
  * color support level with cache control (negative=disable caching)
@@ -156,13 +158,19 @@ const COLOR_SPACE: ColorSpace = /* @__PURE__ */ (() => {
 })();
 
 
-// fg=foreground, bg=background, ft=font, ue=underline, ie=inverse, re=reset, pr=previous (internal state)
+// fg=foreground
+// bg=background
+// ft=font
+// ue=underline
+// ie=inverse
+// re=reset
+// pr=previous (internal state)
 type StyleKeys = 'fg' | 'bg' | 'ft' | 'ue' | 'ie' | 're' | 'pr';
 type AnsiCodeTuple = [on: number, off: number, isCustom?: number];
 type StyleState = Partial<Record<StyleKeys, AnsiCodeTuple>>;
 type StainBaseColors = 'black' | 'blue' | 'cyan' | 'green' | 'purple' | 'red' | 'white' | 'yellow';
 export type StainColors = StainBaseColors | `i${StainBaseColors}`;
-// generate XtermKeys from x0 to x255
+// Generate XtermKeys from x0 to x255
 type GenerateXtermKeys<N extends number, Acc extends string[] = []> =
   Acc['length'] extends N
     ? Acc[number]
@@ -191,11 +199,85 @@ type CustomAnsiStainer<
 
 
 type StainOpts<C extends Record<string, number> = EmptyObject> = {
-  format?: (...args: any[])=> string;
+  format?: (...args: unknown[])=> string;
   noColor?: boolean;
   xterm?: boolean;
   colors?: C;
 };
+
+
+/**
+ * ansi escape-er
+ * @note -> without handlin/escapin nesting it simplifies to: `\x1b[${open}m${str}\x1b[${close}m`
+ * @param  {string} str
+ * @param  {StrNum} open
+ * @param  {StrNum} close
+ * @param  {StrNum} fontReplace
+ * @return {[type]}
+ */
+const escStain = (str: string, open: StrNum, close: StrNum, fontReplace?: StrNum) => {
+  str = typeof str !== 'string' ? String(str) : str; // just in case
+  const openStr = ESC + `[${open}m`;
+  const closeStr = ESC + `[${close}m`;
+  const closeLen = closeStr.length;
+  const parts: string[] = [];
+  let cursor = 0;
+  let seqCount = 0; // count of close sequences for alternating styles
+  let resetCount = 0;
+  while (true) {
+    const idxClose = str.indexOf(closeStr, cursor);
+    // next global reset unless it is the reset style
+    const idxReset = open === 0 ? -1 : str.indexOf(RESET, cursor);
+    let idx = -1;
+    let isReset = false;
+    // which comes first, cur close sequence or a global reset
+    if (idxClose >= 0) {
+      if (idxReset >= 0 && idxReset < idxClose) {
+        idx = idxReset;
+        isReset = true;
+      } else {
+        idx = idxClose;
+      }
+    } else if (idxReset >= 0) {
+      idx = idxReset;
+      isReset = true;
+    } else {
+      break;
+    }
+    parts.push(str.substring(cursor, idx));
+
+    if (isReset) {
+      parts.push(RESET);
+      resetCount++;
+      // after every second reset restore style - handles: stain.red(`text ${stain.reset('reset')} text`)
+      if (resetCount % 2 === 0) { parts.push(openStr); }
+      cursor = idx + RESET.length;
+      continue;
+    }
+
+    // a closing sequence; need to determine the correct replacement
+    const segment = str.substring(cursor, idx);
+    const openInSeg = segment.split(openStr).length;
+    const closeInSeg = segment.split(closeStr).length;
+
+    let rep = openStr;
+    // this roundabout logic is for font styles nesting
+    // e.g: stain.bold(`bold ${stain.normal('norm')} bold`)
+    if (fontReplace !== undefined && openInSeg <= closeInSeg) {
+      // use seqCount to treat the first closeStr as an 'opener' and the second as the 'closer'
+      seqCount++;
+      const on = ESC + `[${fontReplace}m`; // outer style's open code
+      const off = ESC + `[${close}m`; // inner style's open/close code
+      rep = (seqCount % 2 === 1) ? on + off : off + on;
+    }
+
+    parts.push(rep);
+    cursor = idx + closeLen;
+  }
+  parts.push(str.substring(cursor));
+  return openStr + parts.join('') + closeStr;
+};
+
 
 /**
  * a nice node typed color api, that isn't "slow" at
@@ -218,23 +300,23 @@ function createStain<C extends Record<string, number> = EmptyObject>(
       : typeof args[0] !== 'string' ? JSON.stringify(args[0]) : args[0],
     noColor = COLOR_SPACE === 0,
   } = opts;
-  const kulers: Record<string, number> = {};
-  const defColors: null | number[] = colors || xterm ? [] : null;
+  const colorsAll: Record<string, number> = {};
+  const colorsDef: null | number[] = colors || xterm ? [] : null;
   for (const [k, v] of Object.entries({
     black: 30, red: 31, green: 32, yellow: 33, blue: 34, purple: 35, cyan: 36, white: 37,
   })) {
-    kulers[k] = v;
-    kulers[`i${k}`] = v + 60;
+    colorsAll[k] = v;
+    colorsAll[`i${k}`] = v + 60;
     // add default colors
-    defColors && [v, v + 60].forEach(i => {
-      defColors.push(i);
-      defColors.push(i + 10); // intense
+    colorsDef && [v, v + 60].forEach(i => {
+      colorsDef.push(i);
+      colorsDef.push(i + 10); // intense
     });
   }
   // tracks 8-bit palette for escaping, not elegant, but works, todo replace with maths
   const eBitColor: Record<string, number> = {};
   const customColor = ([k, v]: [k: string, v: number]) => {
-    kulers[k] = v;
+    colorsAll[k] = v;
     eBitColor[k] = v;
   };
   // add xterm 255 colors
@@ -243,88 +325,15 @@ function createStain<C extends Record<string, number> = EmptyObject>(
   // add custom defined colors
   colors && Object.entries(colors).forEach(customColor);
 
-  // provies the same api, but doesn't add color, and much faster
+  // provies the same api, but doesn't add color, and much, much, much, faster
   if (noColor) {
     // avoids poluting proto on passed in utils.format
-    const plain = opts?.format ? (...args: any[]) => format(...args) : format;
-    const chain = Object.keys(kulers).concat(['bg', 'bold', 'dim', 'normal', 'reset', 'underline']);
+    const plain = opts?.format ? (...args: unknown[]) => format(...args) : format;
+    const chain = Object.keys(colorsAll).concat(['bg', 'bold', 'dim', 'normal', 'reset', 'underline']);
     // @ts-expect-error not typable
     for (const prop of chain) { plain[prop] = plain; }
     return plain as CustomAnsiStainer<C, boolean>;
   }
-
-  type StrNum = string | number;
-  const escStain = (str: string, open: StrNum, close: StrNum, replace?: StrNum) => {
-    // str = String(str);
-    // convert numeric codes to actual ANSI escape sequences
-    const openStr = ESC + `[${open}m`;
-    const closeStr = ESC + `[${close}m`;
-    const closeLen = closeStr.length;
-    const parts: string[] = [];
-    let cursor = 0;
-    let seqCount = 0; // count of close sequences for alternating styles
-    let resetCount = 0;
-    while (true) {
-      const idxClose = str.indexOf(closeStr, cursor);
-      // next global reset unless it is the reset style
-      const idxReset = open === 0 ? -1 : str.indexOf(RESET, cursor);
-      let idx = -1;
-      let isReset = false;
-      // which comes first, cur close sequence or a global reset
-      if (idxClose >= 0) {
-        if (idxReset >= 0 && idxReset < idxClose) {
-          idx = idxReset;
-          isReset = true;
-        } else {
-          idx = idxClose;
-        }
-      } else if (idxReset >= 0) {
-        idx = idxReset;
-        isReset = true;
-      } else {
-        break;
-      }
-      parts.push(str.substring(cursor, idx));
-
-      if (isReset) {
-        parts.push(RESET);
-        resetCount++;
-        // after every second reset restore style - handles: stain.red(`text ${stain.reset('reset')} text`)
-        if (resetCount % 2 === 0) { parts.push(openStr); }
-        cursor = idx + RESET.length;
-        continue;
-      }
-
-      // it's a closing sequence. Now, determine the correct replacement
-      const segment = str.substring(cursor, idx);
-      const openInSeg = segment.split(openStr).length;
-      const closeInSeg = segment.split(closeStr).length;
-
-      let rep: string;
-      // this complex logic is for font styles, where `stain.normal`'s opening code (`22`)
-      // is the same as `stain.bold`'s closing code (`22`), creating ambiguity
-      if (replace !== undefined && openInSeg <= closeInSeg) {
-        // case 1: Alternating nesting pattern (e.g. `normal` in `bold`)
-        // the segment before the match does not contain an unclosed opening tag of our type
-        // we use `seqCount` to treat the first `closeStr` as an "opener" and the second as a "closer"
-        seqCount++;
-        const on = ESC + `[${replace}m`; // the outer style's open code (e.g. `\x1B[1m` for bold)
-        const off = ESC + `[${close}m`;   // the inner style's open/close code (e.g. `\x1B[22m` for normal)
-        rep = (seqCount % 2 === 1) ? on + off : off + on;
-      } else {
-        // case 2: Self-nesting (e.g. `bold` in `bold`) or simple styles (e.g. `red` in `red`)
-        // the segment has an unclosed `openStr`, so this `closeStr` belongs to that inner style
-        // we just need to re-apply our own outer style to continue it
-        rep = openStr;
-      }
-      parts.push(rep);
-      cursor = idx + closeLen;
-    }
-    parts.push(str.substring(cursor));
-    return openStr + parts.join('') + closeStr;
-  };
-
-
 
   // our main stain
   const colorProxy = (cur: StyleState = {}) =>
@@ -332,16 +341,19 @@ function createStain<C extends Record<string, number> = EmptyObject>(
       get: (_target, prop: string) => {
         const nxt = {...cur};
         const fg = nxt.fg;
-        if (kulers[prop] !== undefined) {
-        // need to keep previous for bg logic
-          nxt.pr = [fg?.[0] ?? kulers[prop], 39, fg?.[2] ?? (eBitColor[prop] !== undefined ? 1 : 0)];
-          nxt.fg = [kulers[prop], 39, eBitColor[prop] !== undefined ? 1 : 0];
-        } else if (prop === 'bg' && fg) {
+        if (colorsAll[prop] !== undefined) { // xterm logic -----------------------
+          // need to keep previous for bg logic
+          nxt.pr = [
+            fg?.[0] ?? colorsAll[prop],
+            39,
+            fg?.[2] ?? (eBitColor[prop] !== undefined ? 1 : 0),
+          ];
+          nxt.fg = [colorsAll[prop], 39, eBitColor[prop] !== undefined ? 1 : 0];
+        } else if (prop === 'bg' && fg) { // bg logic --------------------------
           nxt.bg = [fg[0] + (fg[2] || fg[1] === 49 ? 0 : 10), 49, fg[2]] as AnsiCodeTuple;
           // @ts-expect-error to make this type easier we ignore undefined
           if (nxt.pr?.[1] === 39) { nxt.fg = fg[0] === nxt.pr[0] ? undefined : [...nxt.pr]; }
-        } else {
-        // font styles
+        } else { // font style logic -------------------------------------------
           const fo = prop === 'bold' ? 1 : prop === 'dim' ? 2 : prop === 'normal' ? 22 : null;
           if (fo) {
             nxt.ft = [fo, 22, 0];
@@ -357,7 +369,6 @@ function createStain<C extends Record<string, number> = EmptyObject>(
       },
       apply: (_target, _thisArg, args: string[]) => {
         let res = format(...args);
-        // console.log({res})
         // a loop here will dec perf by 6x
         if (cur.re) { return escStain(res, 0, 0); }
         if (cur.fg) { res = escStain(res, (cur.fg[2] ? '38;5;' : '') + cur.fg[0], cur.fg[1]); }
@@ -373,7 +384,7 @@ function createStain<C extends Record<string, number> = EmptyObject>(
 
 const stain = createStain({ xterm: true });
 
-export default stain;
+export default stain
 export {
   createStain,
 };
