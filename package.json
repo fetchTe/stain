@@ -1,0 +1,75 @@
+{
+  "name": "stain",
+  "version": "0.0.1",
+  "description": "Fluent, flexible, and fast ANSI styling that adds color to your terminal",
+  "homepage": "https://github.com/fetchTe/stain",
+  "license": "MIT",
+  "keywords": ["ansi", "colors", "4-bit", "8-bit", "NO_COLOR", "fluent-api", "dyslectic friendly"],
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "make release",
+    "test": "make test"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@eslint/js": "9.29.0",
+    "@stylistic/eslint-plugin": "4.4.1",
+    "@types/bun": "1.2.16",
+    "@types/eslint": "9.6.1",
+    "@types/node": "24.0.1",
+    "@typescript-eslint/parser": "8.34.0",
+    "cli-reap":  "1.0.1",
+    "comment-directive": "1.2.1",
+    "eslint": "9.29.0",
+    "globables": "2.0.1",
+    "typescript": "5.8.3",
+    "typescript-eslint": "8.34.0"
+  },
+  "exports": {
+    ".": {
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      },
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./index": {
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      },
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "author": {
+    "email": "git@fetchte.com",
+    "name": "fetchTe",
+    "url": "https://github.com/fetchTe/stain"
+  },
+  "bugs": {
+    "email": "git@fetchte.com",
+    "url": "https://github.com/fetchTe/stain/issues"
+  },
+  "engines": {
+    "node": ">=14.15.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fetchTe/stain.git"
+  }
+}
