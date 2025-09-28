@@ -7,7 +7,7 @@ import {
 export const ESC   = '\x1B';
 export const RESET = '\x1B[0m';
 
-export const COLOR_DEF = {
+export const ANSI = {
   black: 30,
   iblack: 90,
   red: 31,
@@ -25,10 +25,10 @@ export const COLOR_DEF = {
   white: 37,
   iwhite: 97,
 };
-export const XTERM_DEF = Object.fromEntries(
+export const XTERM = Object.fromEntries(
   Array(256).fill(0).map((_v, i) => [`x${i}`, i] as [string, number]),
 );
-export const COLOR_ALL = {...COLOR_DEF, ...XTERM_DEF};
+export const COLORS = {...ANSI, ...XTERM};
 
 
 /**

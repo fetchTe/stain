@@ -1,10 +1,10 @@
 import {
-  COLOR_ALL,
-  COLOR_DEF,
+  COLORS,
+  ANSI,
   COLOR_SPACE,
   ESC,
   RESET,
-  XTERM_DEF,
+  XTERM,
 } from './constants.ts';
 
 type EmptyObject = Record<never, never>;
@@ -172,8 +172,8 @@ function createStain<C extends Record<string, number> = EmptyObject>(
   } = opts;
 
   const colorAll: Record<string, number> = colors
-    ? {...(xterm ? COLOR_ALL : COLOR_DEF), ...colors}
-    : (xterm ? COLOR_ALL : COLOR_DEF);
+    ? {...(xterm ? COLORS : ANSI), ...colors}
+    : (xterm ? COLORS : ANSI);
 
   // provies the same api, but doesn't add color, and much, much, much, faster
   if (noColor) {
@@ -190,8 +190,8 @@ function createStain<C extends Record<string, number> = EmptyObject>(
   // xterm look-up map to determin if xterm
   // @see {@link https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit}
   const color256: Record<string, number> = colors
-    ? (xterm ? {...XTERM_DEF, ...colors} : colors)
-    : (xterm ? XTERM_DEF : {});
+    ? (xterm ? {...XTERM, ...colors} : colors)
+    : (xterm ? XTERM : {});
 
   // our main stain
   const colorProxy = (cur: StyleState = {}) =>
@@ -227,7 +227,7 @@ function createStain<C extends Record<string, number> = EmptyObject>(
       },
       apply: (_target, _thisArg, args: string[]) => {
         let res = format(...args);
-        // a loop here will dec perf by 6x
+        // a loop here will dec perf by 6x; and a switch tends to be slower
         if (cur.re) { return escFn(res, 0, 0); }
         if (cur.fg) { res = escFn(res, (cur.fg[2] ? '38;5;' : '') + cur.fg[0], cur.fg[1]); }
         if (cur.bg) { res = escFn(res, (cur.bg[2] ? '48;5;' : '') + cur.bg[0], cur.bg[1]); }
@@ -246,4 +246,9 @@ export default stain;
 export {
   stain,
   createStain,
+  ANSI,
+  COLOR_SPACE,
+  ESC,
+  RESET,
+  XTERM,
 };
