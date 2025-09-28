@@ -1,8 +1,12 @@
-## [`v1.1.0`](https://github.com/fetchTe/stain/releases/tag/v1.1.0) - `2025-09-28`
+## [`v1.2.0`](https://github.com/fetchTe/stain/releases/tag/v1.1.0) - `2025-09-28`
 
 ### ▎Added
 + Export `constants.ts` helpers: `ANSI`, `ESC`, `RESET`, `XTERM`, `COLOR_SPACE`
 
+### ▎Fixed
++ Force color in tests for `.github` CI workflow actions
++ Makefile `release` target to exit non-zero on test failure
++ Non-POSIX `==` inside a single-bracket `[` Makefile
 
 ## [`v1.0.0`](https://github.com/fetchTe/stain/releases/tag/v1.0.0) - `2025-09-28`
 
@@ -13,6 +17,7 @@
 + Documentation, examples, and all that jazz
 + Tests with printed output
 + `.github` workflows
+
 
 
 ## [`v0.0.1`](https://github.com/fetchTe/stain/releases/tag/v0.0.1) - `2025-09-28`
