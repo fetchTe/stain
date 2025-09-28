@@ -114,7 +114,7 @@ describe('createStain', () => {
         noColor: false,
         format: util.format,
       });
-      const stain = createStain();
+      const stain = createStain({noColor: false});
       const r1 = stainFmt.green('greenFmt');
       const e1 = stain.green('greenFmt');
       const r2 = stainFmt.green(1, 2, 3);
@@ -149,7 +149,7 @@ describe('createStain', () => {
     });
 
     test('should use default options when called without arguments', () => {
-      const stain = createStain();
+      const stain = createStain({noColor: false});
       const r1 = stain.red('hello');
       // should work with default options (color enabled unless COLOR_SPACE is 0)
       expect(typeof r1).toBe('string');
