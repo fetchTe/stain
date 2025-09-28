@@ -1,6 +1,6 @@
 {
   "name": "stain",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Fluent, flexible, and fast ANSI styling that adds color to your terminal",
   "homepage": "https://github.com/fetchTe/stain",
   "license": "MIT",
