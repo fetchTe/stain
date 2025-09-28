@@ -1,7 +1,10 @@
 import {
+  COLOR_ALL,
+  COLOR_DEF,
   COLOR_SPACE,
   ESC,
   RESET,
+  XTERM_DEF,
 } from './constants.ts';
 
 type EmptyObject = Record<never, never>;
@@ -142,14 +145,8 @@ const escStain = (str: string, open: StrNum, close: StrNum, fontReplace?: StrNum
  * @return {[type]}
  */
 const escStainSimple = (str: string, open: StrNum, close: StrNum, _fontReplace?: StrNum) =>
-  `${ESC}[${open}m` + (typeof str !== 'string' ? String(str) : str) `${ESC}[${close}m`;
+  `${ESC}[${open}m` + (typeof str !== 'string' ? String(str) : str) + `${ESC}[${close}m`;
 
-
-const COLOR_DEF = {
-  black:30, iblack:90, red:31, ired:91, green:32, igreen:92, yellow:33, iyellow:93, blue:34, iblue:94, purple:35, ipurple:95, cyan:36, icyan:96, white:37, iwhite:97,
-};
-const XTERM_DEF = Object.fromEntries(Array(256).fill(0).map((_v, i) => [`x${i}`, i] as [string, number]));
-const COLOR_ALL = {...COLOR_DEF, ...XTERM_DEF};
 
 /**
  * a nice node typed color api, that isn't "slow" at
@@ -245,10 +242,8 @@ function createStain<C extends Record<string, number> = EmptyObject>(
 
 const stain = /* @__PURE__ */ (() => createStain({ xterm: true }))();
 
-const stain = createStain({ xterm: true });
-
-export default stain
+export default stain;
 export {
+  stain,
   createStain,
 };
-
