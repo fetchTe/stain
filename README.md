@@ -1,4 +1,12 @@
-# Stain - ANSI Styling
+<h1>
+Stain - ANSI Styling
+<a href="https://mibecode.com">
+  <img align="right" title="&#8805;95% Human Code" alt="&#8805;95% Human Code" src="https://mibecode.com/badge.svg" />
+</a>
+<img align="right" alt="empty space" src="https://mibecode.com/4px.svg" />
+<img align="right" alt="NPM Version" src="https://img.shields.io/npm/v/stain?color=white" />
+</h1>
+
 
 Stain the pane without the pain of remembering if it's `bgRed`, `redBg`, or ordering for that matter
 
